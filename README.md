@@ -61,6 +61,8 @@ The script will:
 - Track discounts offered to customers
 - Simulate human-like interaction
 
+You can close the VM window and as long as the VM is running, it will work.  I have had this script running for 3+ months replying to all reviews for a client, with only one minor change needed when OCR detection was not working properly.
+
 ## Configuration
 
 The script uses several constants that can be modified:
