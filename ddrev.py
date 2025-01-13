@@ -2,14 +2,40 @@ import pyautogui
 import time
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import pytesseract
 from pathlib import Path
 import cv2
 import numpy as np
 import random
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Set up logging with rotation
+log_file = "doordash_review.log"
+max_bytes = 5 * 1024 * 1024  # 5MB per file
+backup_count = 5  # Keep 5 backup files
+
+# Configure the rotating file handler
+file_handler = RotatingFileHandler(
+    log_file,
+    maxBytes=max_bytes,
+    backupCount=backup_count,
+    encoding='utf-8'
+)
+
+# Configure console handler with a more concise format
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s: %(message).80s'))
+
+# Set up the root logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
+# Clear any existing handlers to avoid duplication
+for handler in logger.handlers[:]:
+    if isinstance(handler, logging.StreamHandler):
+        logger.removeHandler(handler)
 
 # Constants
 DISCOUNT_TRACKER_FILE = "discount_tracker.json"
@@ -21,7 +47,7 @@ TEMPLATE_POSITIONS = {
     "We're confident we'll do better next time": 3,
     "Thank you for your review": 4,
     "We're glad you had a great experience": 5,
-    "None": 6  # Adding this since it appears to be an option
+    "None": 6
 }
 
 def human_pause(min_seconds=0.5, max_seconds=2.0):
@@ -74,23 +100,44 @@ def find_and_click(image_name, confidence=0.8, retries=MAX_RETRIES):
     return False
 
 def refresh_page():
-    """Refresh the page using keyboard shortcut, ensuring browser is in focus first"""
+    """Refresh the page using multiple fallback methods"""
     try:
-        # Click on the ratings area first to ensure browser is in focus
-        if not find_and_click("rating.png", confidence=0.9):
-            logging.error("Could not find ratings section to focus browser window")
+        # First ensure browser window is in focus
+        if find_and_click("lifetime.png", confidence=0.9):
+            human_pause(0.5, 1.0)  # Brief pause after focusing
+            
+            # Now try Ctrl+R (Linux/Windows) or Cmd+R (Mac)
+            pyautogui.hotkey('ctrl', 'r')
+            human_pause(3.0, 5.0)  # Wait for potential refresh
+            
+            # Second attempt: Try F5 if first attempt didn't work
+            if not find_and_click("lifetime.png", confidence=0.9):
+                logging.info("First refresh attempt may have failed, trying F5")
+                pyautogui.press('f5')
+                human_pause(3.0, 5.0)
+            
+            # Third attempt: Try clicking browser refresh button location
+            if not find_and_click("lifetime.png", confidence=0.9):
+                logging.info("Second refresh attempt may have failed, trying browser refresh button")
+                # Typical browser refresh button location (adjust coordinates as needed)
+                pyautogui.click(x=100, y=50)  # Approximate refresh button location
+                human_pause(3.0, 5.0)
+            
+            # Final verification
+            for attempt in range(3):
+                if find_and_click("lifetime.png", confidence=0.9):
+                    logging.info("Page refreshed successfully")
+                    return True
+                human_pause(1.0, 2.0)
+            
+            logging.error("All refresh attempts failed")
+            return False
+        else:
+            logging.error("Could not find lifetime.png to focus browser window")
             return False
             
-        human_pause(0.5, 1.0)  # Brief pause after focusing
-        
-        # Now press F5 to refresh
-        pyautogui.press('f5')
-        # Wait for page to load
-        human_pause(3.0, 5.0)  # Longer pause to ensure page loads
-        logging.info("Page refreshed successfully")
-        return True
     except Exception as e:
-        logging.error(f"Error refreshing page: {e}")
+        logging.error(f"Error during page refresh: {e}")
         return False
 
 def get_star_rating():
